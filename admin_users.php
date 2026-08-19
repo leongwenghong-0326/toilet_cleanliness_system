@@ -17,6 +17,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $insert = $pdo->prepare('INSERT IGNORE INTO user_toilets (user_id,toilet_id) VALUES (?,?)');
             foreach ($_POST['toilet_ids'] ?? [] as $toiletId) { $insert->execute([$studentId, (int) $toiletId]); }
             flash('success', 'Toilet assignments updated.');
+        } elseif ($action === 'delete') {
+            $studentId = (int) $_POST['id'];
+            $history = $pdo->prepare('SELECT COUNT(*) FROM toilet_sessions WHERE user_id=?');
+            $history->execute([$studentId]);
+            if ((int) $history->fetchColumn() > 0) throw new RuntimeException('This student has visit history and cannot be deleted. Deactivate the account to preserve accountability records.');
+            $delete = $pdo->prepare('DELETE FROM users WHERE id=? AND role="student"');
+            $delete->execute([$studentId]);
+            flash('success', 'Student account deleted.');
         }
         redirect('admin_users.php');
     } catch (Throwable $exception) { $error = $exception->getCode() === '23000' ? 'That email is already registered.' : $exception->getMessage(); }
@@ -26,6 +34,9 @@ $toilets = $pdo->query('SELECT id,code,name FROM toilets ORDER BY code')->fetchA
 $assignments = $pdo->query('SELECT user_id, toilet_id FROM user_toilets')->fetchAll();
 $assignmentMap = [];
 foreach ($assignments as $row) { $assignmentMap[$row['user_id']][] = (int) $row['toilet_id']; }
+$historyStatement = $pdo->query("SELECT s.id,s.user_id,s.check_in_at,s.check_in_comment,s.check_out_comment,s.status,t.code FROM toilet_sessions s JOIN toilets t ON t.id=s.toilet_id ORDER BY s.check_in_at DESC");
+$historyMap = [];
+foreach ($historyStatement as $row) { if (count($historyMap[$row['user_id']] ?? []) < 3) $historyMap[$row['user_id']][] = $row; }
 ?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Manage students · ClearCheck</title><link rel="stylesheet" href="assets/style.css"></head><body><header class="topbar"><a class="brand" href="admin.php"><span class="brand-mark">CC</span><span>ClearCheck <small>ADMIN</small></span></a><div class="top-actions"><span class="user-chip"><span class="avatar">A</span><?= e(user()['name']) ?></span><a class="text-link" href="logout.php">Sign out</a></div></header><main class="page">
 <nav class="admin-nav"><a href="admin.php">Overview</a><a href="admin_toilets.php">Toilets</a><a class="active" href="admin_users.php">Students</a></nav>
 <div class="page-heading"><div><p class="eyebrow">Access control</p><h1>Manage students.</h1><p class="muted">Create accounts and assign toilets each student is responsible for.</p></div></div>
@@ -40,9 +51,9 @@ foreach ($assignments as $row) { $assignmentMap[$row['user_id']][] = (int) $row[
 <section class="history-section"><div class="section-title"><div><p class="eyebrow">All students</p><h2>Students &amp; toilet assignments</h2></div><span class="count-label"><?= count($students) ?> total</span></div>
 <?php foreach ($students as $student): $assigned = $assignmentMap[$student['id']] ?? []; ?>
 <div class="student-card"><div class="student-head"><div><strong><?= e($student['name']) ?></strong><small><?= e($student['email']) ?></small></div>
-<form method="post"><input type="hidden" name="csrf" value="<?= csrf() ?>"><input type="hidden" name="action" value="toggle_active"><input type="hidden" name="id" value="<?= $student['id'] ?>"><button class="button outline" type="submit"><?= $student['active'] ? 'Deactivate' : 'Activate' ?></button></form></div>
+<div class="student-actions"><a class="button outline" href="admin_edit_student.php?id=<?= $student['id'] ?>">Edit</a><form method="post"><input type="hidden" name="csrf" value="<?= csrf() ?>"><input type="hidden" name="action" value="toggle_active"><input type="hidden" name="id" value="<?= $student['id'] ?>"><button class="button outline" type="submit"><?= $student['active'] ? 'Deactivate' : 'Activate' ?></button></form><form method="post" onsubmit="return confirm('Delete this student account?')"><input type="hidden" name="csrf" value="<?= csrf() ?>"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="<?= $student['id'] ?>"><button class="button danger-button" type="submit">Delete</button></form></div></div>
 <form method="post" class="assign-form"><input type="hidden" name="csrf" value="<?= csrf() ?>"><input type="hidden" name="action" value="assign"><input type="hidden" name="user_id" value="<?= $student['id'] ?>">
 <div class="toilet-checks"><?php foreach ($toilets as $toilet): ?><label class="check-pill"><input type="checkbox" name="toilet_ids[]" value="<?= $toilet['id'] ?>" <?= in_array($toilet['id'], $assigned, true) ? 'checked' : '' ?>><?= e($toilet['code']) ?></label><?php endforeach; ?></div>
-<button class="button dark" type="submit">Save assignments</button></form></div>
+<button class="button dark" type="submit">Save assignments</button></form><?php if (!empty($historyMap[$student['id']])): ?><div class="student-history"><strong>Recent visit history</strong><?php foreach ($historyMap[$student['id']] as $visit): ?><div class="student-history-row"><span><b><?= e($visit['code']) ?></b> · <?= format_date($visit['check_in_at']) ?></span><span><b>In:</b> <?= e($visit['check_in_comment']) ?><br><b>Out:</b> <?= $visit['check_out_comment'] ? e($visit['check_out_comment']) : '—' ?></span><span class="history-state <?= $visit['status']==='completed' ? 'done' : 'live' ?>"><?= ucfirst($visit['status']) ?></span></div><?php endforeach; ?></div><?php endif; ?></div>
 <?php endforeach; if (!$students): ?><p class="muted">No students yet.</p><?php endif; ?>
 </section></main></body></html>

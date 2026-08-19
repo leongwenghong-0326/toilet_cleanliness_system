@@ -1,19 +1,8 @@
 <?php
-function load_env(string $path): void {
-    if (!is_file($path)) return;
-    foreach (file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
-        $line = trim($line);
-        if ($line === '' || str_starts_with($line, '#') || !str_contains($line, '=')) continue;
-        [$key, $value] = array_map('trim', explode('=', $line, 2));
-        if ($key !== '' && getenv($key) === false) putenv("$key=$value");
-    }
-}
-load_env(__DIR__ . '/.env');
-
-define('DB_HOST', getenv('DB_HOST') ?: '127.0.0.1');
-define('DB_NAME', getenv('DB_NAME') ?: 'toilet_cleanliness');
-define('DB_USER', getenv('DB_USER') ?: 'root');
-define('DB_PASS', getenv('DB_PASS') ?: '');
+define('DB_HOST', '127.0.0.1');
+define('DB_NAME', 'toilet_cleanliness');
+define('DB_USER', 'root');
+define('DB_PASS', 'Hong2007');
 const APP_NAME = 'ClearCheck';
 const UPLOAD_DIR = __DIR__ . '/uploads';
 const MAX_LOGIN_ATTEMPTS = 5;
@@ -21,15 +10,88 @@ const LOGIN_LOCKOUT_MINUTES = 15;
 const SESSION_OVERDUE_MINUTES = 120;
 const ISSUE_KEYWORDS = ['dirty','wet','smell','odour','odor','rubbish','trash','broken','clog','leak','stain','overflow'];
 
+function initialize_database(PDO $pdo): void {
+    $schema = file_get_contents(__DIR__ . '/schema.sql');
+    if ($schema === false) {
+        throw new RuntimeException('Unable to read schema.sql.');
+    }
+
+    foreach (array_filter(array_map('trim', preg_split('/;\s*(?:\r?\n|$)/', $schema))) as $statement) {
+        if (preg_match('/^CREATE DATABASE|^USE /i', $statement)) {
+            continue;
+        }
+        $pdo->exec($statement);
+    }
+
+    $users = [
+        ['Campus Admin', 'admin@clearcheck.test', 'admin123', 'admin'],
+        ['Ali Hassan', 'ali@student.test', 'student123', 'student'],
+        ['Maya Joseph', 'maya@student.test', 'student123', 'student'],
+    ];
+    $insert = $pdo->prepare('INSERT INTO users (name,email,password_hash,role,active) VALUES (?,?,?,?,1) ON DUPLICATE KEY UPDATE name=VALUES(name), password_hash=VALUES(password_hash), role=VALUES(role), active=1');
+    foreach ($users as $user) {
+        $insert->execute([$user[0], $user[1], password_hash($user[2], PASSWORD_DEFAULT), $user[3]]);
+    }
+
+    $toilets = [
+        ['T01', 'North Wing · Ground', 'North Wing', 'Ground floor', 'attention'],
+        ['T02', 'Library · Level 1', 'Library', 'Level 1', 'available'],
+        ['T03', 'Science Block · Level 2', 'Science Block', 'Level 2', 'available'],
+        ['T04', 'Student Centre · Ground', 'Student Centre', 'Ground floor', 'available'],
+    ];
+    $insert = $pdo->prepare('INSERT INTO toilets (code,name,building,floor_label,status) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE name=VALUES(name), building=VALUES(building), floor_label=VALUES(floor_label), status=VALUES(status)');
+    foreach ($toilets as $toilet) {
+        $insert->execute($toilet);
+    }
+
+    $studentIds = $pdo->query("SELECT id FROM users WHERE role='student'")->fetchAll(PDO::FETCH_COLUMN);
+    $toiletIds = $pdo->query('SELECT id FROM toilets')->fetchAll(PDO::FETCH_COLUMN);
+    $link = $pdo->prepare('INSERT IGNORE INTO user_toilets (user_id,toilet_id) VALUES (?,?)');
+    foreach ($studentIds as $studentId) {
+        foreach ($toiletIds as $toiletId) {
+            $link->execute([$studentId, $toiletId]);
+        }
+    }
+
+    if (!is_dir(UPLOAD_DIR)) {
+        mkdir(UPLOAD_DIR, 0755, true);
+    }
+}
+
 function db(): PDO {
     static $pdo;
-    if (!$pdo) {
+    if ($pdo instanceof PDO) {
+        return $pdo;
+    }
+
+    try {
         $pdo = new PDO('mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=utf8mb4', DB_USER, DB_PASS, [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_EMULATE_PREPARES => false,
         ]);
+
+        $hasUsersTable = $pdo->query("SHOW TABLES LIKE 'users'")->fetchColumn();
+        if (!$hasUsersTable) {
+            initialize_database($pdo);
+        }
+    } catch (Throwable $exception) {
+        $bootstrap = new PDO('mysql:host=' . DB_HOST . ';charset=utf8mb4', DB_USER, DB_PASS, [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            PDO::ATTR_EMULATE_PREPARES => false,
+        ]);
+
+        $bootstrap->exec('CREATE DATABASE IF NOT EXISTS `' . DB_NAME . '` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci');
+        $pdo = new PDO('mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=utf8mb4', DB_USER, DB_PASS, [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            PDO::ATTR_EMULATE_PREPARES => false,
+        ]);
+
+        initialize_database($pdo);
     }
+
     return $pdo;
 }
 

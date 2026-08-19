@@ -31,15 +31,16 @@ $queryWithout = fn(string $key) => http_build_query(array_diff_key($_GET, [$key 
 <input type="text" name="student" placeholder="Student name" value="<?= e($studentFilter) ?>">
 <button class="button outline" type="submit">Filter</button><a class="button outline" href="admin.php">Reset</a>
 </form>
-<div class="table-wrap"><table><thead><tr><th>Visit</th><th>Toilet</th><th>Check-in</th><th>Evidence</th><th>State</th><th></th></tr></thead><tbody>
+<div class="table-wrap"><table><thead><tr><th>Visit</th><th>Toilet</th><th>Check-in</th><th>Comments</th><th>Evidence</th><th>State</th><th></th></tr></thead><tbody>
 <?php foreach ($rows as $row): $overdue = $row['status'] === 'active' && is_session_overdue($row['check_in_at']); ?>
 <tr><td><strong><?= e($row['user_name']) ?></strong><small><?= format_date($row['check_in_at']) ?></small></td>
 <td><strong><?= e($row['code']) ?></strong><small><?= e($row['toilet_name']) ?></small></td>
 <td><strong><?= format_time($row['check_in_at']) ?></strong><small><?= $row['check_out_at'] ? 'Out ' . format_time($row['check_out_at']) : 'Still active' ?></small></td>
+<td class="comment-cell"><small><b>In:</b> <?= e($row['check_in_comment']) ?></small><small><b>Out:</b> <?= $row['check_out_comment'] ? e($row['check_out_comment']) : '—' ?></small></td>
 <td><span class="evidence"><span>Before <?= $row['before_count'] ?></span><span>After <?= $row['after_count'] ?></span></span></td>
 <td><span class="history-state <?= $row['status']==='completed'?'done':'live' ?>"><?= ucfirst($row['status']) ?></span><?php if ($overdue): ?><span class="history-state overdue">Overdue</span><?php endif; ?></td>
 <td><button type="button" class="text-link" data-view-photos="<?= $row['id'] ?>">View photos</button></td></tr>
-<?php endforeach; if (!$rows): ?><tr><td colspan="6" class="muted">No visits match these filters.</td></tr><?php endif; ?>
+<?php endforeach; if (!$rows): ?><tr><td colspan="7" class="muted">No visits match these filters.</td></tr><?php endif; ?>
 </tbody></table></div>
 <?php if ($totalPages > 1): ?><div class="pagination">
 <?php for ($p = 1; $p <= $totalPages; $p++): ?><a class="<?= $p === $page ? 'active' : '' ?>" href="?<?= e($queryWithout('page')) ?>&page=<?= $p ?>"><?= $p ?></a><?php endfor; ?>

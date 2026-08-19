@@ -1,4 +1,13 @@
 document.addEventListener('DOMContentLoaded', () => {
+  const actions = document.querySelector('.top-actions');
+  if (actions && !document.querySelector('[data-student-history-link]')) {
+    const historyLink = document.createElement('a');
+    historyLink.className = 'text-link';
+    historyLink.href = 'student_history.php';
+    historyLink.textContent = 'My history';
+    historyLink.dataset.studentHistoryLink = 'true';
+    actions.insertBefore(historyLink, actions.lastElementChild);
+  }
   document.querySelectorAll('[data-camera-form]').forEach((form) => {
     const camera = form.querySelector('[data-camera]');
     const video = camera.querySelector('video');

@@ -1,0 +1,13 @@
+<?php
+session_start(); require_once __DIR__ . '/config.php'; require_admin(); $pdo = db(); $id = (int) ($_GET['id'] ?? $_POST['id'] ?? 0); $error = '';
+$lookup = $pdo->prepare('SELECT * FROM toilets WHERE id=? LIMIT 1'); $lookup->execute([$id]); $toilet = $lookup->fetch();
+if (!$toilet) { flash('error', 'Toilet was not found.'); redirect('admin_toilets.php'); }
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    verify_csrf();
+    try {
+        $update = $pdo->prepare('UPDATE toilets SET code=?,name=?,building=?,floor_label=?,status=? WHERE id=?');
+        $update->execute([trim($_POST['code']), trim($_POST['name']), trim($_POST['building']), trim($_POST['floor_label']), $_POST['status'], $id]);
+        flash('success', 'Toilet updated.'); redirect('admin_toilets.php');
+    } catch (Throwable $exception) { $error = $exception->getCode() === '23000' ? 'That toilet code is already in use.' : $exception->getMessage(); }
+}
+?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Edit toilet · ClearCheck</title><link rel="stylesheet" href="assets/style.css"></head><body><header class="topbar"><a class="brand" href="admin.php"><span class="brand-mark">CC</span><span>ClearCheck <small>ADMIN</small></span></a></header><main class="page"><div class="page-heading"><div><p class="eyebrow">Facilities</p><h1>Edit <?= e($toilet['code']) ?>.</h1><p class="muted">Update toilet code, location, and operational status.</p></div></div><?php if ($error): ?><div class="notice error"><?= e($error) ?></div><?php endif; ?><section class="settings-panel"><form method="post" class="visit-form"><input type="hidden" name="csrf" value="<?= csrf() ?>"><input type="hidden" name="id" value="<?= $toilet['id'] ?>"><label>Code<input name="code" maxlength="20" value="<?= e($toilet['code']) ?>" required></label><label>Name<input name="name" value="<?= e($toilet['name']) ?>" required></label><label>Building<input name="building" value="<?= e($toilet['building']) ?>" required></label><label>Floor<input name="floor_label" value="<?= e($toilet['floor_label']) ?>" required></label><label>Status<select name="status"><option value="available" <?= $toilet['status']==='available' ? 'selected' : '' ?>>Available</option><option value="attention" <?= $toilet['status']==='attention' ? 'selected' : '' ?>>Needs attention</option><option value="closed" <?= $toilet['status']==='closed' ? 'selected' : '' ?>>Closed</option></select></label><div class="settings-actions"><a class="button outline" href="admin_toilets.php">Cancel</a><button class="button primary" type="submit">Save toilet <span>→</span></button></div></form></section></main></body></html>

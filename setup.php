@@ -5,8 +5,6 @@ $message = '';
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
-        $server = new PDO('mysql:host=' . DB_HOST . ';charset=utf8mb4', DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
-        $server->exec("CREATE DATABASE IF NOT EXISTS `" . DB_NAME . "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
         $pdo = db();
         $schema = file_get_contents(__DIR__ . '/schema.sql');
         foreach (array_filter(array_map('trim', preg_split('/;\s*(?:\r?\n|$)/', $schema))) as $statement) {
@@ -32,7 +30,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $link = $pdo->prepare('INSERT IGNORE INTO user_toilets (user_id,toilet_id) VALUES (?,?)');
         foreach ($studentIds as $studentId) foreach ($toiletIds as $toiletId) $link->execute([$studentId, $toiletId]);
         if (!is_dir(UPLOAD_DIR)) mkdir(UPLOAD_DIR, 0755, true);
-        $message = 'Setup complete. Demo accounts are ready.';
+        $check = $pdo->prepare('SELECT password_hash, active, role FROM users WHERE email=? LIMIT 1');
+        $check->execute(['admin@clearcheck.test']);
+        $admin = $check->fetch();
+        if (!$admin || !$admin['active'] || $admin['role'] !== 'admin' || !password_verify('admin123', $admin['password_hash'])) {
+            throw new RuntimeException('Demo admin verification failed. Check the users table permissions.');
+        }
+        $userCount = (int) $pdo->query('SELECT COUNT(*) FROM users')->fetchColumn();
+        $toiletCount = (int) $pdo->query('SELECT COUNT(*) FROM toilets')->fetchColumn();
+        $message = "Setup complete. Verified admin account. {$userCount} users and {$toiletCount} toilets are ready.";
     } catch (Throwable $exception) { $error = $exception->getMessage(); }
 }
 ?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Setup · ClearCheck</title><link rel="stylesheet" href="assets/style.css"></head><body class="setup"><main class="setup-card"><div class="brand-mark">CC</div><p class="eyebrow">Campus operations</p><h1>Set up ClearCheck</h1><p class="muted">Create the MySQL database, tables, demo users, and sample toilet locations.</p><?php if ($message): ?><div class="notice success"><?= e($message) ?><br><a href="index.php">Open the app →</a></div><?php endif; ?><?php if ($error): ?><div class="notice error"><?= e($error) ?></div><?php endif; ?><form method="post"><button class="button primary" type="submit">Initialize database</button></form><p class="hint">Admin: admin@clearcheck.test / admin123<br>Student: ali@student.test / student123</p></main></body></html>

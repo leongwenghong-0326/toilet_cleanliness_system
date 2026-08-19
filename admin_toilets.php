@@ -15,6 +15,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $update = $pdo->prepare('UPDATE toilets SET status=? WHERE id=?');
             $update->execute([$_POST['status'], (int) $_POST['id']]);
             flash('success', 'Status updated.');
+        } elseif ($action === 'delete') {
+            $toiletId = (int) $_POST['id'];
+            $history = $pdo->prepare('SELECT COUNT(*) FROM toilet_sessions WHERE toilet_id=?');
+            $history->execute([$toiletId]);
+            if ((int) $history->fetchColumn() > 0) throw new RuntimeException('This toilet has visit history and cannot be deleted. Mark it closed to preserve accountability records.');
+            $delete = $pdo->prepare('DELETE FROM toilets WHERE id=?');
+            $delete->execute([$toiletId]);
+            flash('success', 'Toilet deleted.');
         }
         redirect('admin_toilets.php');
     } catch (Throwable $exception) { $error = $exception->getCode() === '23000' ? 'That toilet code is already in use.' : $exception->getMessage(); }
@@ -36,6 +44,6 @@ $toilets = $pdo->query("SELECT t.*, (SELECT COUNT(*) FROM toilet_sessions s WHER
 <section class="history-section"><div class="section-title"><div><p class="eyebrow">All locations</p><h2>Toilets</h2></div><span class="count-label"><?= count($toilets) ?> total</span></div>
 <div class="table-wrap"><table><thead><tr><th>Code</th><th>Location</th><th>Assigned</th><th>Visits</th><th>Status</th><th>Actions</th></tr></thead><tbody>
 <?php foreach ($toilets as $toilet): ?><tr><td><strong><?= e($toilet['code']) ?></strong></td><td><strong><?= e($toilet['name']) ?></strong><small><?= e($toilet['building']) ?> · <?= e($toilet['floor_label']) ?></small></td><td><?= (int) $toilet['assigned_count'] ?> students</td><td><?= (int) $toilet['visit_count'] ?></td><td><span class="status <?= e($toilet['status']) ?>"><?= e(ucfirst($toilet['status'])) ?></span></td><td class="row-actions">
-<form method="post"><input type="hidden" name="csrf" value="<?= csrf() ?>"><input type="hidden" name="action" value="set_status"><input type="hidden" name="id" value="<?= $toilet['id'] ?>"><select name="status" onchange="this.form.submit()"><option value="available" <?= $toilet['status']==='available'?'selected':'' ?>>Available</option><option value="attention" <?= $toilet['status']==='attention'?'selected':'' ?>>Needs attention</option><option value="closed" <?= $toilet['status']==='closed'?'selected':'' ?>>Closed</option></select></form>
+<div class="row-actions"><a class="button outline" href="admin_edit_toilet.php?id=<?= $toilet['id'] ?>">Edit</a><form method="post"><input type="hidden" name="csrf" value="<?= csrf() ?>"><input type="hidden" name="action" value="set_status"><input type="hidden" name="id" value="<?= $toilet['id'] ?>"><select name="status" onchange="this.form.submit()"><option value="available" <?= $toilet['status']==='available'?'selected':'' ?>>Available</option><option value="attention" <?= $toilet['status']==='attention'?'selected':'' ?>>Needs attention</option><option value="closed" <?= $toilet['status']==='closed'?'selected':'' ?>>Closed</option></select></form><form method="post" onsubmit="return confirm('Delete this toilet?')"><input type="hidden" name="csrf" value="<?= csrf() ?>"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="<?= $toilet['id'] ?>"><button class="button danger-button" type="submit">Delete</button></form></div>
 </td></tr><?php endforeach; if (!$toilets): ?><tr><td colspan="6" class="muted">No toilets yet.</td></tr><?php endif; ?>
 </tbody></table></div></section></main></body></html>
